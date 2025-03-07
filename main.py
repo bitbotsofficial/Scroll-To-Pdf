@@ -6,8 +6,8 @@ import img2pdf
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QFileDialog, 
                             QMessageBox, QFrame, QGridLayout, QProgressBar, QCheckBox)
-from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QThread, pyqtSignal, Qt
+from PyQt6.QtGui import QIcon, QPalette, QColor
 
 class CaptureThread(QThread):
     screenshot_taken = pyqtSignal(int)
@@ -40,46 +40,63 @@ class CaptureThread(QThread):
         while self.capturing and (self.max_scrolls == 0 or scroll_count < self.max_scrolls):
             self.status_update.emit(f"Capturing screenshot {scroll_count + 1}...")
             current_screenshot = ImageGrab.grab()
-            
-            # Check for page end if we have a previous screenshot
-            if previous_screenshot is not None:
-                if self.images_are_similar(current_screenshot, previous_screenshot):
-                    self.status_update.emit("Potential page end detected, taking one more screenshot")
-                    self.screenshots.append(current_screenshot)
-                    self.screenshot_taken.emit(len(self.screenshots))
-                    
-                    # Take one more screenshot to capture the remaining part
-                    pyautogui.scroll(-scroll_height)
-                    time.sleep(self.delay)
-                    final_screenshot = ImageGrab.grab()
-                    self.screenshots.append(final_screenshot)
-                    self.screenshot_taken.emit(len(self.screenshots))
-                    self.status_update.emit("Page end confirmed with final screenshot")
-                    break
 
+            # Check for page end before adding screenshot (except for first screenshot)
+            if previous_screenshot is not None:
+                similarity, remaining_height = self.check_page_end(current_screenshot, previous_screenshot, scroll_height)
+                
+                if similarity > 0.98:  # High similarity indicates potential page end
+                    self.status_update.emit(f"High similarity detected: {similarity:.3f}")
+                    if remaining_height < 35:  # If remaining content is less than 35px
+                        self.status_update.emit(f"Page end detected - remaining content: {remaining_height}px")
+                        break
+                    else:
+                        self.status_update.emit(f"Continuing - remaining content: {remaining_height}px")
+                else:
+                    self.status_update.emit(f"Content differs - similarity: {similarity:.3f}")
+
+            # Add the screenshot only if we haven't reached the end
             self.screenshots.append(current_screenshot)
             self.screenshot_taken.emit(len(self.screenshots))
+            
             previous_screenshot = current_screenshot
-
             pyautogui.scroll(-scroll_height)
             scroll_count += 1
             time.sleep(self.delay)
 
-        self.capture_complete.emit(scroll_count < self.max_scrolls, len(self.screenshots))
+        self.capture_complete.emit(scroll_count < self.max_scrolls or self.max_scrolls == 0, len(self.screenshots))
 
     def stop(self):
         self.capturing = False
 
-    def images_are_similar(self, img1, img2):
-        """Simple similarity check for page-end detection."""
+    def check_page_end(self, img1, img2, scroll_height):
+        """Check similarity and calculate remaining content height."""
+        # Resize for faster comparison
         img1 = img1.resize((100, 100)).convert('L')
         img2 = img2.resize((100, 100)).convert('L')
+        
+        # Calculate similarity
         pixels1 = list(img1.getdata())
         pixels2 = list(img2.getdata())
-        diff_pixels = sum(1 for p1, p2 in zip(pixels1, pixels2) if abs(p1 - p2) > 30)
+        diff_pixels = sum(1 for p1, p2 in zip(pixels1, pixels2) if abs(p1 - p2) > 40)
         similarity = 1 - (diff_pixels / len(pixels1))
-        self.status_update.emit(f"Similarity: {similarity:.3f}")
-        return similarity > 0.95
+
+        # Calculate remaining content height
+        original_height = img2.size[1]
+        scale_factor = original_height / 100  # Since we resized to 100px height
+        
+        # Find first differing pixel from bottom of previous image
+        bottom_diff = 0
+        for y in range(99, -1, -1):  # From bottom up
+            row1 = [img1.getpixel((x, y)) for x in range(100)]
+            row2 = [img2.getpixel((x, y)) for x in range(100)]
+            if any(abs(p1 - p2) > 40 for p1, p2 in zip(row1, row2)):
+                bottom_diff = 100 - y  # Height from bottom where difference starts
+                break
+        
+        remaining_height = (bottom_diff * scale_factor) if bottom_diff > 0 else 0
+        
+        return similarity, remaining_height
 
 class AutoScrollCapturePDF(QMainWindow):
     def __init__(self):
@@ -91,6 +108,7 @@ class AutoScrollCapturePDF(QMainWindow):
         self.resize(600, 800)
         self.setup_ui()
         self.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), "app_icon.ico")))
+        self.update_stylesheet_based_on_theme()
 
     def setup_ui(self):
         main_widget = QWidget()
@@ -98,31 +116,6 @@ class AutoScrollCapturePDF(QMainWindow):
         main_layout.setContentsMargins(25, 25, 25, 25)
         main_layout.setSpacing(20)
         self.setCentralWidget(main_widget)
-
-        self.setStyleSheet("""
-            QMainWindow { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2C3E50, stop:1 #4CA1AF); }
-            QWidget { color: #E0E0E0; font-family: 'Segoe UI', Arial; }
-            QLabel { color: #E0E0E0; }
-            QLabel#title { color: white; font-size: 22px; font-weight: bold; qproperty-alignment: AlignCenter; }
-            QLabel#counter { font-size: 14px; qproperty-alignment: AlignCenter; }
-            QLabel#status { color: #64B5F6; font-size: 13px; font-style: italic; qproperty-alignment: AlignCenter; }
-            QPushButton { border: none; border-radius: 8px; padding: 12px; font-weight: bold; color: white; font-size: 13px; }
-            QPushButton:disabled { background-color: #7f8c8d; }
-            QPushButton#start { background-color: #2ecc71; }
-            QPushButton#start:hover:!disabled { background-color: #27ae60; }
-            QPushButton#stop { background-color: #e74c3c; }
-            QPushButton#stop:hover:!disabled { background-color: #c0392b; }
-            QPushButton#save { background-color: #3498db; }
-            QPushButton#save:hover:!disabled { background-color: #2980b9; }
-            QPushButton#clear { background-color: #f39c12; color: #333; }
-            QPushButton#clear:hover:!disabled { background-color: #d35400; color: white; }
-            QPushButton#preview { background-color: #9b59b6; }
-            QPushButton#preview:hover:!disabled { background-color: #8e44ad; }
-            QDoubleSpinBox, QSpinBox, QCheckBox { border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; padding: 6px; background-color: rgba(255, 255, 255, 0.05); color: #E0E0E0; }
-            QFrame#neumorphic { background-color: rgba(44, 62, 80, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; }
-            QProgressBar { border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 5px; background-color: rgba(255, 255, 255, 0.05); }
-            QProgressBar::chunk { background-color: #3498db; border-radius: 3px; }
-        """)
 
         # Title Frame
         title_frame = QFrame()
@@ -231,6 +224,72 @@ class AutoScrollCapturePDF(QMainWindow):
         self.clear_button.setEnabled(False)
         buttons_layout.addWidget(self.clear_button)
 
+    def update_stylesheet_based_on_theme(self):
+        palette = QApplication.palette()
+        is_dark_mode = palette.color(QPalette.ColorRole.Window).lightness() < 128
+        
+        if is_dark_mode:
+            self.setStyleSheet("""
+                QMainWindow { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2C3E50, stop:1 #4CA1AF); }
+                QWidget { color: #E0E0E0; font-family: 'Segoe UI', Arial; }
+                QLabel { color: #E0E0E0; }
+                QLabel#title { color: white; font-size: 22px; font-weight: bold; qproperty-alignment: AlignCenter; }
+                QLabel#counter { font-size: 14px; qproperty-alignment: AlignCenter; }
+                QLabel#status { color: #64B5F6; font-size: 13px; font-style: italic; qproperty-alignment: AlignCenter; }
+                QPushButton { border: none; border-radius: 8px; padding: 12px; font-weight: bold; color: white; font-size: 13px; }
+                QPushButton:disabled { background-color: #7f8c8d; }
+                QPushButton#start { background-color: #2ecc71; }
+                QPushButton#start:hover:!disabled { background-color: #27ae60; }
+                QPushButton#stop { background-color: #e74c3c; }
+                QPushButton#stop:hover:!disabled { background-color: #c0392b; }
+                QPushButton#save { background-color: #3498db; }
+                QPushButton#save:hover:!disabled { background-color: #2980b9; }
+                QPushButton#clear { background-color: #f39c12; color: #333; }
+                QPushButton#clear:hover:!disabled { background-color: #d35400; color: white; }
+                QPushButton#preview { background-color: #9b59b6; }
+                QPushButton#preview:hover:!disabled { background-color: #8e44ad; }
+                QDoubleSpinBox, QSpinBox, QCheckBox { border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; padding: 6px; background-color: rgba(255, 255, 255, 0.05); color: #E0E0E0; }
+                QFrame#neumorphic { background-color: rgba(44, 62, 80, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; }
+                QProgressBar { border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 5px; background-color: rgba(255, 255, 255, 0.05); }
+                QProgressBar::chunk { background-color: #3498db; border-radius: 3px; }
+                QMessageBox { background-color: #2C3E50; color: #E0E0E0; }
+                QMessageBox QPushButton { background-color: #3498db; color: white; border: none; padding: 5px; }
+                QMessageBox QPushButton:hover { background-color: #2980b9; }
+            """)
+        else:
+            self.setStyleSheet("""
+                QMainWindow { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #E0E0E0, stop:1 #FFFFFF); }
+                QWidget { color: #333333; font-family: 'Segoe UI', Arial; }
+                QLabel { color: #333333; }
+                QLabel#title { color: #2C3E50; font-size: 22px; font-weight: bold; qproperty-alignment: AlignCenter; }
+                QLabel#counter { font-size: 14px; qproperty-alignment: AlignCenter; }
+                QLabel#status { color: #1976D2; font-size: 13px; font-style: italic; qproperty-alignment: AlignCenter; }
+                QPushButton { border: none; border-radius: 8px; padding: 12px; font-weight: bold; color: white; font-size: 13px; }
+                QPushButton:disabled { background-color: #B0BEC5; }
+                QPushButton#start { background-color: #2ecc71; }
+                QPushButton#start:hover:!disabled { background-color: #27ae60; }
+                QPushButton#stop { background-color: #e74c3c; }
+                QPushButton#stop:hover:!disabled { background-color: #c0392b; }
+                QPushButton#save { background-color: #3498db; }
+                QPushButton#save:hover:!disabled { background-color: #2980b9; }
+                QPushButton#clear { background-color: #f39c12; color: #333; }
+                QPushButton#clear:hover:!disabled { background-color: #d35400; color: white; }
+                QPushButton#preview { background-color: #9b59b6; }
+                QPushButton#preview:hover:!disabled { background-color: #8e44ad; }
+                QDoubleSpinBox, QSpinBox, QCheckBox { border: 1px solid rgba(0, 0, 0, 0.2); border-radius: 6px; padding: 6px; background-color: rgba(255, 255, 255, 0.8); color: #333333; }
+                QFrame#neumorphic { background-color: rgba(255, 255, 255, 0.7); border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 16px; }
+                QProgressBar { border: 1px solid rgba(0, 0, 0, 0.2); border-radius: 5px; background-color: rgba(255, 255, 255, 0.8); }
+                QProgressBar::chunk { background-color: #3498db; border-radius: 3px; }
+                QMessageBox { background-color: #FFFFFF; color: #333333; }
+                QMessageBox QPushButton { background-color: #3498db; color: white; border: none; padding: 5px; }
+                QMessageBox QPushButton:hover { background-color: #2980b9; }
+            """)
+
+    def changeEvent(self, event):
+        if event.type() == event.Type.StyleChange:
+            self.update_stylesheet_based_on_theme()
+        super().changeEvent(event)
+
     def start_capture(self):
         if self.capturing:
             return
@@ -247,7 +306,7 @@ class AutoScrollCapturePDF(QMainWindow):
         is_fullscreen = self.fullscreen_check.isChecked()
 
         QMessageBox.information(self, "Auto-Scrolling Capture", 
-            "Switch to the webpage and focus it. Capture starts in 3 second.")
+            "Switch to the webpage and focus it. Capture starts in 3 seconds.")
         self.showMinimized()
         self.status_label.setText("Preparing to capture...")
 
@@ -340,6 +399,7 @@ class AutoScrollCapturePDF(QMainWindow):
 if __name__ == "__main__":
     import sys
     app = QApplication(sys.argv)
+    app.setStyle('Fusion')
     window = AutoScrollCapturePDF()
     window.show()
     sys.exit(app.exec())

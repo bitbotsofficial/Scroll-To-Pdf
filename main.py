@@ -3,6 +3,10 @@ import time
 from PIL import ImageGrab, Image
 import pyautogui
 import img2pdf
+try:
+    import pygetwindow as gw
+except ImportError:
+    gw = None  # Fallback if pygetwindow isn’t installed
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QFileDialog, 
                             QMessageBox, QFrame, QGridLayout, QProgressBar, QCheckBox)
@@ -24,11 +28,10 @@ class CaptureThread(QThread):
         self.screenshots = []
 
     def run(self):
-        time.sleep(3)  # Initial wait
+        time.sleep(3)  # Additional wait after fullscreen adjustment (total 5 seconds from start)
         scroll_count = 0
         previous_screenshot = None
 
-        # Determine scroll height
         if self.manual_height > 0:
             scroll_height = self.manual_height
             self.status_update.emit(f"Using manual height: {scroll_height}px")
@@ -41,13 +44,11 @@ class CaptureThread(QThread):
             self.status_update.emit(f"Capturing screenshot {scroll_count + 1}...")
             current_screenshot = ImageGrab.grab()
 
-            # Check for page end before adding screenshot (except for first screenshot)
             if previous_screenshot is not None:
                 similarity, remaining_height = self.check_page_end(current_screenshot, previous_screenshot, scroll_height)
-                
-                if similarity > 0.98:  # High similarity indicates potential page end
+                if similarity > 0.98:
                     self.status_update.emit(f"High similarity detected: {similarity:.3f}")
-                    if remaining_height < 35:  # If remaining content is less than 35px
+                    if remaining_height < 35:
                         self.status_update.emit(f"Page end detected - remaining content: {remaining_height}px")
                         break
                     else:
@@ -55,7 +56,6 @@ class CaptureThread(QThread):
                 else:
                     self.status_update.emit(f"Content differs - similarity: {similarity:.3f}")
 
-            # Add the screenshot only if we haven't reached the end
             self.screenshots.append(current_screenshot)
             self.screenshot_taken.emit(len(self.screenshots))
             
@@ -70,28 +70,23 @@ class CaptureThread(QThread):
         self.capturing = False
 
     def check_page_end(self, img1, img2, scroll_height):
-        """Check similarity and calculate remaining content height."""
-        # Resize for faster comparison
         img1 = img1.resize((100, 100)).convert('L')
         img2 = img2.resize((100, 100)).convert('L')
         
-        # Calculate similarity
         pixels1 = list(img1.getdata())
         pixels2 = list(img2.getdata())
         diff_pixels = sum(1 for p1, p2 in zip(pixels1, pixels2) if abs(p1 - p2) > 40)
         similarity = 1 - (diff_pixels / len(pixels1))
 
-        # Calculate remaining content height
         original_height = img2.size[1]
-        scale_factor = original_height / 100  # Since we resized to 100px height
+        scale_factor = original_height / 100
         
-        # Find first differing pixel from bottom of previous image
         bottom_diff = 0
-        for y in range(99, -1, -1):  # From bottom up
+        for y in range(99, -1, -1):
             row1 = [img1.getpixel((x, y)) for x in range(100)]
             row2 = [img2.getpixel((x, y)) for x in range(100)]
             if any(abs(p1 - p2) > 40 for p1, p2 in zip(row1, row2)):
-                bottom_diff = 100 - y  # Height from bottom where difference starts
+                bottom_diff = 100 - y
                 break
         
         remaining_height = (bottom_diff * scale_factor) if bottom_diff > 0 else 0
@@ -107,8 +102,9 @@ class AutoScrollCapturePDF(QMainWindow):
         self.setWindowTitle("Scroll2Pdf")
         self.resize(600, 800)
         self.setup_ui()
-        icon_path = os.path.join(os.path.dirname(sys.executable), "app_icon.ico")
-        self.setWindowIcon(QIcon(icon_path))
+        icon_path = os.path.join(os.path.dirname(__file__), "app_icon.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         self.update_stylesheet_based_on_theme()
 
     def setup_ui(self):
@@ -118,7 +114,6 @@ class AutoScrollCapturePDF(QMainWindow):
         main_layout.setSpacing(20)
         self.setCentralWidget(main_widget)
 
-        # Title Frame
         title_frame = QFrame()
         title_frame.setObjectName("neumorphic")
         title_layout = QVBoxLayout(title_frame)
@@ -128,7 +123,6 @@ class AutoScrollCapturePDF(QMainWindow):
         title_layout.addWidget(title_label)
         main_layout.addWidget(title_frame)
 
-        # Settings Frame
         settings_frame = QFrame()
         settings_frame.setObjectName("neumorphic")
         settings_layout = QGridLayout(settings_frame)
@@ -161,13 +155,12 @@ class AutoScrollCapturePDF(QMainWindow):
         self.height_spin.setFixedWidth(120)
         settings_layout.addWidget(self.height_spin, 2, 1)
 
-        fullscreen_label = QLabel("Fullscreen mode (F11):")
+        fullscreen_label = QLabel("Fullscreen mode (auto-toggle):")
         settings_layout.addWidget(fullscreen_label, 3, 0)
         self.fullscreen_check = QCheckBox()
         self.fullscreen_check.setChecked(False)
         settings_layout.addWidget(self.fullscreen_check, 3, 1)
 
-        # Status Frame
         status_frame = QFrame()
         status_frame.setObjectName("neumorphic")
         status_layout = QVBoxLayout(status_frame)
@@ -188,7 +181,6 @@ class AutoScrollCapturePDF(QMainWindow):
         self.progress_bar.setTextVisible(False)
         status_layout.addWidget(self.progress_bar)
 
-        # Buttons Frame
         buttons_frame = QFrame()
         buttons_frame.setObjectName("neumorphic")
         buttons_layout = QVBoxLayout(buttons_frame)
@@ -291,6 +283,141 @@ class AutoScrollCapturePDF(QMainWindow):
             self.update_stylesheet_based_on_theme()
         super().changeEvent(event)
 
+    def is_fullscreen_active(self):
+        """Check if the current screen matches the full screen resolution."""
+        screen_width, screen_height = pyautogui.size()
+        screenshot = ImageGrab.grab()
+        screenshot_width, screenshot_height = screenshot.size
+        
+        # Stricter threshold: 98% of screen size
+        is_fullscreen = (screenshot_width >= screen_width * 0.98 and 
+                         screenshot_height >= screen_height * 0.98)
+        
+        # Additional check with pygetwindow if available
+        if gw:
+            browser_window = self.find_browser_window()
+            if browser_window:
+                try:
+                    win_width, win_height = browser_window.width, browser_window.height
+                    win_x, win_y = browser_window.left, browser_window.top
+                    print(f"Window size: {win_width}x{win_height}, Position: ({win_x}, {win_y})")
+                    # True fullscreen should have minimal offset and match screen size closely
+                    is_fullscreen = (is_fullscreen and 
+                                   win_width >= screen_width * 0.98 and 
+                                   win_height >= screen_height * 0.98 and 
+                                   win_x <= 5 and win_y <= 5)
+                except Exception as e:
+                    print(f"Error checking window size with pygetwindow: {str(e)}")
+        
+        print(f"Screen: {screen_width}x{screen_height}, Screenshot: {screenshot_width}x{screenshot_height}, "
+              f"Fullscreen detected: {is_fullscreen}")
+        return is_fullscreen
+
+    def find_browser_window(self):
+        """Find and return an active browser window using pygetwindow."""
+        if not gw:
+            print("pygetwindow not installed, falling back to pyautogui")
+            return None
+        
+        browser_titles = ["Chrome", "Firefox", "Edge", "Opera", "Safari"]
+        windows = gw.getAllWindows()
+        for window in windows:
+            if not window.title.strip():
+                continue
+            if any(browser in window.title for browser in browser_titles) and window.visible:
+                try:
+                    print(f"Found browser window: {window.title} (Active: {window.isActive})")
+                    if not window.isActive:
+                        window.activate()
+                        time.sleep(1)  # Wait for activation
+                    if window.isActive:
+                        return window
+                except Exception as e:
+                    print(f"Error activating window {window.title}: {str(e)}")
+        print("No suitable browser window found")
+        return None
+
+    def adjust_fullscreen(self, desired_fullscreen):
+        """Adjust fullscreen state with retries and improved detection."""
+        self.status_label.setText("Adjusting window mode...")
+        time.sleep(2)  # Initial delay to allow GUI minimization and browser focus
+        
+        browser_window = self.find_browser_window()
+        max_attempts = 3
+        attempt = 0
+        
+        while attempt < max_attempts:
+            attempt += 1
+            print(f"Fullscreen adjustment attempt {attempt}/{max_attempts}")
+            
+            if browser_window:
+                try:
+                    browser_window.activate()
+                    time.sleep(1)  # Ensure focus
+                    current_fullscreen = self.is_fullscreen_active()
+                    print(f"Desired fullscreen: {desired_fullscreen}, Current fullscreen: {current_fullscreen}")
+                    
+                    if desired_fullscreen != current_fullscreen:
+                        print(f"Toggling fullscreen with F11 (desired: {desired_fullscreen})")
+                        pyautogui.hotkey('f11')
+                        time.sleep(2)  # Wait for transition
+                        if self.is_fullscreen_active() == desired_fullscreen:
+                            self.status_label.setText(f"Switched to {'fullscreen' if desired_fullscreen else 'normal'} mode")
+                            return
+                        else:
+                            print(f"Fullscreen toggle failed on attempt {attempt}")
+                    else:
+                        # Force one toggle attempt if detection might be wrong
+                        if attempt == 1 and desired_fullscreen:
+                            print("Forcing fullscreen toggle due to potential detection error")
+                            pyautogui.hotkey('f11')
+                            time.sleep(2)
+                            if self.is_fullscreen_active():
+                                self.status_label.setText("Switched to fullscreen mode (forced)")
+                                return
+                            else:
+                                print("Forced toggle failed, continuing attempts")
+                        else:
+                            self.status_label.setText(f"Already in {'fullscreen' if current_fullscreen else 'normal'} mode")
+                            return
+                except Exception as e:
+                    print(f"Error with browser window adjustment: {str(e)}")
+            else:
+                # Fallback with pyautogui
+                print("Falling back to pyautogui")
+                pyautogui.moveTo(50, 50)
+                pyautogui.click()
+                time.sleep(1)
+                current_fullscreen = self.is_fullscreen_active()
+                print(f"Desired fullscreen: {desired_fullscreen}, Current fullscreen: {current_fullscreen}")
+                
+                if desired_fullscreen != current_fullscreen:
+                    print(f"Toggling fullscreen with F11 (fallback, attempt {attempt})")
+                    pyautogui.hotkey('f11')
+                    time.sleep(2)
+                    if self.is_fullscreen_active() == desired_fullscreen:
+                        self.status_label.setText(f"Switched to {'fullscreen' if desired_fullscreen else 'normal'} mode (fallback)")
+                        return
+                    else:
+                        print(f"Fullscreen toggle failed (fallback) on attempt {attempt}")
+                else:
+                    # Force one toggle attempt in fallback mode too
+                    if attempt == 1 and desired_fullscreen:
+                        print("Forcing fullscreen toggle due to potential detection error (fallback)")
+                        pyautogui.hotkey('f11')
+                        time.sleep(2)
+                        if self.is_fullscreen_active():
+                            self.status_label.setText("Switched to fullscreen mode (forced, fallback)")
+                            return
+                        else:
+                            print("Forced toggle failed (fallback), continuing attempts")
+                    else:
+                        self.status_label.setText(f"Already in {'fullscreen' if current_fullscreen else 'normal'} mode (fallback)")
+                        return
+        
+        self.status_label.setText(f"Failed to {'enter' if desired_fullscreen else 'exit'} fullscreen - press F11 manually")
+        print("Warning: All fullscreen adjustment attempts failed")
+
     def start_capture(self):
         if self.capturing:
             return
@@ -307,11 +434,14 @@ class AutoScrollCapturePDF(QMainWindow):
         is_fullscreen = self.fullscreen_check.isChecked()
 
         QMessageBox.information(self, "Auto-Scrolling Capture", 
-            "Switch to the webpage and focus it. Capture starts in 3 seconds.")
+            "Focus your browser window now. Fullscreen adjustment starts in 2 seconds if checked.\nCapture begins 5 seconds after adjustment.")
         self.showMinimized()
         self.status_label.setText("Preparing to capture...")
 
-        self.capture_thread = CaptureThread(delay, max_scrolls, manual_height, is_fullscreen)
+        self.adjust_fullscreen(is_fullscreen)
+        time.sleep(3)  # Additional wait after adjustment (total 5 seconds from message)
+
+        self.capture_thread = CaptureThread(delay, max_scrolls, manual_height, self.is_fullscreen_active())
         self.capture_thread.screenshot_taken.connect(self.update_counter)
         self.capture_thread.capture_complete.connect(self.capture_finished)
         self.capture_thread.status_update.connect(self.update_status)

@@ -104,10 +104,11 @@ class AutoScrollCapturePDF(QMainWindow):
         self.screenshots = []
         self.capturing = False
         self.capture_thread = None
-        self.setWindowTitle("Auto-Scrolling Webpage Capture")
+        self.setWindowTitle("Scroll2Pdf")
         self.resize(600, 800)
         self.setup_ui()
-        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), "app_icon.ico")))
+        icon_path = os.path.join(os.path.dirname(sys.executable), "app_icon.ico")
+        self.setWindowIcon(QIcon(icon_path))
         self.update_stylesheet_based_on_theme()
 
     def setup_ui(self):

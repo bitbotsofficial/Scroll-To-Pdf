@@ -18,3 +18,7 @@ We are continuously improving Scroll2Pdf to make it even more powerful! Here’s
 - [ ] **Improved UI** – A more seamless and user-friendly experience.
 - [ ] **Enhanced PDF Functionalities** – Share, edit, and manage PDFs effortlessly.
 - [ ] **More Features Coming Soon!** – Brainstorm exciting additions! 💡
+
+---
+
+### 🌟 Enjoyed this project? Give the repo a star and show your support! ⭐

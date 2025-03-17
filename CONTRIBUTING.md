@@ -7,11 +7,11 @@ We appreciate your interest in contributing to Scroll-To-PDF! By contributing, y
 1. **Fork the repository**: Start by creating your own copy of the repository.
 2. **Clone your fork**: Clone your fork to your local machine using:
    ```bash
-   git clone https://github.com/YOUR-USERNAME/Scroll-To-Pdf.git
+   git clone https://github.com/BitBotsoffcial/Scroll-To-Pdf.git
    ```
 3. **Create a branch**: Always create a new branch for your changes:
    ```bash
-   git checkout -b your-branch-name
+   git checkout -b main
    ```
 
 ## Contributing Code
@@ -33,7 +33,7 @@ We appreciate your interest in contributing to Scroll-To-PDF! By contributing, y
 4. **Submit your pull request (PR)**:
    - Push your branch:
      ```bash
-     git push origin your-branch-name
+     git push origin main
      ```
    - Open a pull request via GitHub with a clear title and description.
    - Reference any relevant issues in your PR description.

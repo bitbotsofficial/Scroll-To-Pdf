@@ -14,7 +14,8 @@ VirusTotal Link: https://www.virustotal.com/gui/file/7643d04dae8d6c999a225bf3041
 
 We are continuously improving Scroll2Pdf to make it even more powerful! Here’s what we’re working on:
 
-- [ ] **Automatic Full-Screen Capture** – Adjust for full screen automatically precisely
+- [X] **Automatic Full-Screen Capture** – Adjust for full screen automatically precisely
+- [ ] **Implement AI** - Implementation of AI for page croping.
 - [ ] **Improved UI** – A more seamless and user-friendly experience.
 - [ ] **Enhanced PDF Functionalities** – Share, edit, and manage PDFs effortlessly.
 - [ ] **More Features Coming Soon!** – Brainstorm exciting additions! 💡

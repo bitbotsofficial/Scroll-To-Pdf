@@ -2,14 +2,12 @@
 
 ## Supported Versions
 
-Versions of our project are
-currently being supported with security updates.
+Below are the versions of our project that currently receive security updates:
 
-| Version | Supported          |
+| Version | Status             |
 | ------- | ------------------ |
-| 1.0.0   | :white_check_mark: |
+| 1.0.0   | ✅ Supported        |
 
-## Reporting a Vulnerability
+## Reporting Vulnerabilities
 
-Please contact us immediately if you discover any vulnerabilities in the software. Your feedback is invaluable in helping us maintain its security and reliability.
-bitbotsofficials@gmail.com
+If you discover a vulnerability in the software, please notify us immediately. Your feedback is crucial for maintaining security and reliability. You can reach us at: **[bitbotsofficials@gmail.com](mailto:bitbotsofficials@gmail.com)**.

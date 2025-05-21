@@ -23,4 +23,4 @@ We are continuously improving Scroll2Pdf to make it even more powerful! Here’s
 
 ---
 
-### 🌟 Enjoyed this project? Give the repo a star and show your support! ⭐
+### 🌟 Find it useful? Give the repo a star and show your support! ⭐
